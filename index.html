@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAW Denoise</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --bg2: #1a1a1a;
+    --bg3: #242424;
+    --bg4: #2e2e2e;
+    --border: #333;
+    --border2: #444;
+    --text: #e8e8e8;
+    --text2: #999;
+    --text3: #666;
+    --accent: #d4a843;
+    --accent2: #b8923a;
+    --green: #5a9e6f;
+    --red: #c05a5a;
+    --radius: 6px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; background: var(--bg); color: var(--text); font-size: 13px; }
+
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* HEADER */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 20px; border-bottom: 1px solid var(--border);
+    background: var(--bg2); flex-shrink: 0;
+  }
+  header h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.08em; color: var(--accent); }
+  header .badge { font-size: 10px; color: var(--text3); background: var(--bg4); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; letter-spacing: 0.05em; }
+  header .spacer { flex: 1; }
+  header .meta { font-size: 11px; color: var(--text3); }
+
+  /* MAIN LAYOUT */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 260px; flex-shrink: 0; background: var(--bg2);
+    border-right: 1px solid var(--border); overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+  .sidebar-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-section h2 { font-size: 10px; letter-spacing: 0.12em; color: var(--text3); text-transform: uppercase; margin-bottom: 12px; }
+
+  /* DROP ZONE */
+  .dropzone {
+    border: 1px dashed var(--border2); border-radius: var(--radius);
+    padding: 24px 16px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--bg3);
+  }
+  .dropzone:hover, .dropzone.drag-over { border-color: var(--accent); background: rgba(212,168,67,0.06); }
+  .dropzone .icon { font-size: 24px; margin-bottom: 8px; color: var(--text3); }
+  .dropzone p { color: var(--text2); font-size: 12px; line-height: 1.5; }
+  .dropzone small { font-size: 10px; color: var(--text3); display: block; margin-top: 4px; }
+  #file-input { display: none; }
+
+  /* SLIDERS */
+  .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .slider-row label { width: 90px; flex-shrink: 0; color: var(--text2); font-size: 11px; }
+  .slider-row input[type=range] {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 3px; background: var(--bg4); border-radius: 2px; outline: none; cursor: pointer;
+  }
+  .slider-row input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 2px solid var(--bg2);
+  }
+  .slider-row input[type=range]:disabled { opacity: 0.35; cursor: not-allowed; }
+  .slider-row input[type=range]:disabled::-webkit-slider-thumb { background: var(--text3); }
+  .slider-row .val { width: 34px; text-align: right; color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer; }
+  .checkbox-row input[type=checkbox] { accent-color: var(--accent); }
+  .checkbox-row label { color: var(--text2); font-size: 11px; cursor: pointer; }
+
+  /* SELECT */
+  select {
+    width: 100%; background: var(--bg3); color: var(--text); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 5px 8px; font-size: 11px; font-family: inherit;
+    cursor: pointer; outline: none;
+  }
+  select:focus { border-color: var(--accent); }
+
+  /* BUTTONS */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 7px 14px; border-radius: var(--radius); font-family: inherit; font-size: 12px;
+    cursor: pointer; border: 1px solid var(--border2); background: var(--bg3); color: var(--text2);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .btn:hover { background: var(--bg4); color: var(--text); border-color: var(--border2); }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* STATUS */
+  .status-bar {
+    padding: 6px 16px; font-size: 11px; color: var(--text3);
+    border-top: 1px solid var(--border); background: var(--bg2);
+    display: flex; gap: 16px; align-items: center;
+  }
+  .status-bar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); }
+  .status-bar .dot.active { background: var(--green); box-shadow: 0 0 0 2px rgba(90,158,111,0.25); }
+  .status-bar .dot.processing { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* CANVAS AREA */
+  .canvas-area {
+    flex: 1; overflow: hidden; position: relative;
+    background: var(--bg); display: flex; align-items: center; justify-content: center;
+  }
+  .canvas-wrapper {
+    position: relative; display: inline-block; cursor: crosshair;
+    max-width: 100%; max-height: 100%;
+  }
+  #canvas-before, #canvas-after {
+    display: block; max-width: 100%; max-height: calc(100vh - 80px);
+    image-rendering: auto;
+  }
+  #canvas-after { position: absolute; top: 0; left: 0; width: 100%; height: 100%; clip-path: none; }
+
+  .compare-slider {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: var(--accent); cursor: ew-resize; z-index: 10;
+    transform: translateX(-50%);
+  }
+  .compare-handle {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #000;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #000; font-weight: 700; letter-spacing: -1px; user-select: none;
+  }
+  .compare-label {
+    position: absolute; top: 10px; font-size: 10px; letter-spacing: 0.08em;
+    background: rgba(0,0,0,0.6); color: var(--text); padding: 3px 7px; border-radius: 3px;
+  }
+  .label-before { left: 10px; }
+  .label-after { right: 10px; }
+
+  .empty-state {
+    text-align: center; color: var(--text3); pointer-events: none;
+  }
+  .empty-state .big { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 13px; }
+
+  /* HISTOGRAM */
+  #histogram-canvas { width: 100%; height: 48px; border-radius: 3px; display: block; }
+
+  /* EXIF TABLE */
+  .exif-table { width: 100%; font-size: 11px; }
+  .exif-table td { padding: 2px 0; vertical-align: top; }
+  .exif-table td:first-child { color: var(--text3); width: 80px; }
+  .exif-table td:last-child { color: var(--text2); word-break: break-all; }
+
+  .progress-wrap { margin-top: 8px; }
+  .progress-bar { height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; border-radius: 2px; }
+  .progress-label { font-size: 10px; color: var(--text3); margin-top: 4px; }
+
+  .tag { display: inline-block; font-size: 10px; background: var(--bg4); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; color: var(--text3); margin: 1px; }
+  .tag.green { background: rgba(90,158,111,0.15); border-color: rgba(90,158,111,0.3); color: #7bc99a; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>RAW DENOISE</h1>
+    <span class="badge">BROWSER · SERVERLESS</span>
+    <div class="spacer"></div>
+    <span class="meta" id="header-meta">No file loaded</span>
+  </header>
+
+  <div class="main">
+    <div class="sidebar">
+
+      <div class="sidebar-section">
+        <h2>Load RAW</h2>
+        <div class="dropzone" id="dropzone">
+          <div class="icon">⬆</div>
+          <p>Drop RAW file here<br>or click to browse</p>
+          <small>CR2 · CR3 · NEF · ARW · DNG · RAF · ORF · RW2</small>
+        </div>
+        <input type="file" id="file-input" accept=".cr2,.cr3,.nef,.arw,.dng,.raf,.orf,.rw2,.raw,.dng,.pef,.srw,.3fr,.mef,.nrw,.rw1,.rwl">
+      </div>
+
+      <div class="sidebar-section" id="exif-section" style="display:none">
+        <h2>File Info</h2>
+        <table class="exif-table" id="exif-table"></table>
+      </div>
+
+      <div class="sidebar-section">
+        <h2>Decode Settings</h2>
+
+        <div class="slider-row">
+          <label>Demosaic</label>
+          <select id="userQual" style="flex:1; margin-right:0">
+            <option value="0">Bilinear (fast)</option>
+            <option value="1">VNG</option>
+            <option value="2">PPG</option>
+            <option value="3" selected>AHD (default)</option>
+            <option value="4">DCB</option>
+            <option value="11">DHT (best)</option>
+            <option value="12">AAHD</option>
+          </select>
+        </div>
+
+        <div class="slider-row" style="margin-top:8px">
+          <label>White balance</label>
+          <select id="wb-mode" style="flex:1">
+            <option value="camera" selected>Camera</option>
+            <option value="auto">Auto</option>
+            <option value="daylight">Daylight (D65)</option>
+          </select>
+        </div>
+
+        <div class="slider-row" style="margin-top:8px">
+          <label>Colorspace</label>
+          <select id="outputColor" style="flex:1">
+            <option value="1" selected>sRGB</option>
+            <option value="2">Adobe RGB</option>
+            <option value="4">ProPhoto</option>
+          </select>
+        </div>
+
+        <div class="slider-row" style="margin-top:8px">
+          <label>Highlight</label>
+          <select id="highlight" style="flex:1">
+            <option value="0" selected>Clip</option>
+            <option value="1">Unclip</option>
+            <option value="2">Blend</option>
+            <option value="3">Rebuild (LCH)</option>
+          </select>
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="slider-row">
+            <label>Wavelet NR</label>
+            <input type="range" id="threshold" min="0" max="2000" step="10" value="0">
+            <span class="val" id="threshold-val">0</span>
+          </div>
+          <div class="slider-row">
+            <label>Exposure</label>
+            <input type="range" id="expShift" min="-4" max="4" step="0.1" value="0">
+            <span class="val" id="expShift-val">0</span>
+          </div>
+          <div class="slider-row">
+            <label>Brightness</label>
+            <input type="range" id="bright" min="0.1" max="4" step="0.05" value="1">
+            <span class="val" id="bright-val">1.00</span>
+          </div>
+        </div>
+
+        <div style="margin-top:8px">
+          <div class="checkbox-row">
+            <input type="checkbox" id="fourColorRgb">
+            <label for="fourColorRgb">Four-color RGB (fix maze)</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="useFujiRotate" checked>
+            <label for="useFujiRotate">Fuji sensor rotation</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2>Post-process Denoise</h2>
+        <p style="color:var(--text3); font-size:10px; margin-bottom:10px; line-height:1.5">Applied after decode. Chroma NR works in YCbCr space; luminance NR uses a guided-filter approximation.</p>
+
+        <div class="slider-row">
+          <label>Chroma NR</label>
+          <input type="range" id="chromaNR" min="0" max="100" step="1" value="0">
+          <span class="val" id="chromaNR-val">0</span>
+        </div>
+        <div class="slider-row">
+          <label>Luma NR</label>
+          <input type="range" id="lumaNR" min="0" max="100" step="1" value="0">
+          <span class="val" id="lumaNR-val">0</span>
+        </div>
+        <div class="slider-row">
+          <label>Detail protect</label>
+          <input type="range" id="edgeProtect" min="0" max="100" step="1" value="50">
+          <span class="val" id="edgeProtect-val">50</span>
+        </div>
+
+        <div class="progress-wrap" id="progress-wrap" style="display:none">
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <div class="progress-label" id="progress-label">Processing…</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2>Actions</h2>
+        <div class="btn-row">
+          <button class="btn primary" id="btn-process" disabled>⟳ Process</button>
+          <button class="btn" id="btn-export" disabled>↓ Export PNG</button>
+        </div>
+        <div style="margin-top:8px">
+          <div class="checkbox-row">
+            <input type="checkbox" id="autoProcess" checked>
+            <label for="autoProcess">Auto-process on change</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section" id="histogram-section" style="display:none">
+        <h2>Histogram</h2>
+        <canvas id="histogram-canvas" height="48"></canvas>
+      </div>
+
+      <div class="sidebar-section">
+        <h2>View</h2>
+        <select id="view-mode">
+          <option value="split" selected>Split compare</option>
+          <option value="before">Before only</option>
+          <option value="after">After only</option>
+        </select>
+      </div>
+
+    </div>
+
+    <div class="canvas-area" id="canvas-area">
+      <div class="empty-state" id="empty-state">
+        <div class="big">⬚</div>
+        <p>Drop a RAW file to begin</p>
+      </div>
+      <div class="canvas-wrapper" id="canvas-wrapper" style="display:none">
+        <canvas id="canvas-before"></canvas>
+        <canvas id="canvas-after"></canvas>
+        <div class="compare-slider" id="compare-slider">
+          <div class="compare-handle">◁▷</div>
+        </div>
+        <div class="compare-label label-before">BEFORE</div>
+        <div class="compare-label label-after">AFTER</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">Ready — no file loaded</span>
+    <span style="margin-left:auto; color:var(--text3)" id="status-dim"></span>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   LibRaw-Wasm loader — tries ybouane's libraw-wasm package from CDN.
+   Falls back gracefully if unavailable.
+===================================================================== */
+const LIBRAW_CDN = 'https://cdn.jsdelivr.net/npm/libraw-wasm@1.1.2/dist/index.js';
+
+function setStatus(text, state = 'idle') {
+  document.getElementById('status-text').textContent = text;
+  const dot = document.getElementById('status-dot');
+  dot.className = 'dot' + (state === 'active' ? ' active' : state === 'processing' ? ' processing' : '');
+}
+function setProgress(pct, label) {
+  const w = document.getElementById('progress-wrap');
+  const f = document.getElementById('progress-fill');
+  const l = document.getElementById('progress-label');
+  if (pct === null) { w.style.display = 'none'; return; }
+  w.style.display = 'block';
+  f.style.width = pct + '%';
+  l.textContent = label || 'Processing…';
+}
+
+/* =====================================================================
+   State
+===================================================================== */
+let LibRaw = null;
+let rawBytes = null;
+let beforeImageData = null; // ImageData after decode, before post-NR
+let afterImageData  = null; // ImageData after post-NR
+let imgWidth = 0, imgHeight = 0;
+let comparePos = 0.5;
+let isDragging = false;
+let librawLoaded = false;
+let processingTimeout = null;
+
+/* =====================================================================
+   Guided-filter based luminance NR (separable box-filter approximation)
+   Based on: He et al. 2013, fast O(N) guided image filter.
+===================================================================== */
+function boxBlur(src, w, h, r, dst) {
+  const tmp = new Float32Array(w * h);
+  const scale = 1 / (2 * r + 1);
+  for (let y = 0; y < h; y++) {
+    let sum = 0;
+    const row = y * w;
+    for (let x = 0; x < 2 * r + 1; x++) sum += src[row + Math.min(x, w - 1)];
+    dst[row] = sum * scale;
+    for (let x = 1; x < w; x++) {
+      const remove = x - r - 1 < 0 ? src[row] : src[row + x - r - 1];
+      const add    = x + r >= w ? src[row + w - 1] : src[row + x + r];
+      sum = sum - remove + add;
+      dst[row + x] = sum * scale;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let sum = 0;
+    for (let y = 0; y < 2 * r + 1; y++) sum += dst[Math.min(y, h - 1) * w + x];
+    tmp[x] = sum * scale;
+    for (let y = 1; y < h; y++) {
+      const remove = y - r - 1 < 0 ? dst[x] : dst[(y - r - 1) * w + x];
+      const add    = y + r >= h ? dst[(h - 1) * w + x] : dst[(y + r) * w + x];
+      sum = sum - remove + add;
+      tmp[y * w + x] = sum * scale;
+    }
+  }
+  dst.set(tmp);
+}
+
+function guidedFilter(I, p, w, h, r, eps) {
+  const n = w * h;
+  const meanI = new Float32Array(n);
+  const meanP = new Float32Array(n);
+  const corrI = new Float32Array(n);
+  const corrIP = new Float32Array(n);
+
+  for (let i = 0; i < n; i++) { corrI[i] = I[i] * I[i]; corrIP[i] = I[i] * p[i]; }
+
+  boxBlur(I, w, h, r, meanI);
+  boxBlur(p, w, h, r, meanP);
+  boxBlur(corrI, w, h, r, corrI);
+  boxBlur(corrIP, w, h, r, corrIP);
+
+  const a = new Float32Array(n);
+  const b = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const varI = corrI[i] - meanI[i] * meanI[i];
+    a[i] = (corrIP[i] - meanI[i] * meanP[i]) / (varI + eps);
+    b[i] = meanP[i] - a[i] * meanI[i];
+  }
+
+  boxBlur(a, w, h, r, a);
+  boxBlur(b, w, h, r, b);
+
+  const q = new Float32Array(n);
+  for (let i = 0; i < n; i++) q[i] = a[i] * I[i] + b[i];
+  return q;
+}
+
+/* =====================================================================
+   RGB <-> YCbCr conversion (BT.601, full range 0-255)
+===================================================================== */
+function rgbToYCbCr(r, g, b) {
+  const Y  =  0.299   * r + 0.587   * g + 0.114   * b;
+  const Cb = -0.16874 * r - 0.33126 * g + 0.5     * b + 128;
+  const Cr =  0.5     * r - 0.41869 * g - 0.08131 * b + 128;
+  return [Y, Cb, Cr];
+}
+function yCbCrToRgb(Y, Cb, Cr) {
+  const Cb0 = Cb - 128, Cr0 = Cr - 128;
+  const R = Y                + 1.402   * Cr0;
+  const G = Y - 0.34414 * Cb0 - 0.71414 * Cr0;
+  const B = Y + 1.772   * Cb0;
+  return [R, G, B];
+}
+
+/* =====================================================================
+   Post-process denoise: chroma NR + luminance NR
+===================================================================== */
+function applyPostDenoise(srcData, chromaNR, lumaNR, edgeProtect, w, h) {
+  if (chromaNR === 0 && lumaNR === 0) return srcData;
+  const pixels = srcData.data;
+  const n = w * h;
+  const Y  = new Float32Array(n);
+  const Cb = new Float32Array(n);
+  const Cr = new Float32Array(n);
+
+  for (let i = 0; i < n; i++) {
+    const pi = i * 4;
+    const [y, cb, cr] = rgbToYCbCr(pixels[pi], pixels[pi+1], pixels[pi+2]);
+    Y[i] = y; Cb[i] = cb; Cr[i] = cr;
+  }
+  const result = new Uint8ClampedArray(pixels);
+
+  if (chromaNR > 0) {
+    const chromaRadius = Math.round(1 + chromaNR * 0.3);
+    const chromaEps = 0.01 + (100 - edgeProtect) * 0.005;
+    const cbNR = guidedFilter(Y, Cb, w, h, chromaRadius, chromaEps * 255 * 255);
+    const crNR = guidedFilter(Y, Cr, w, h, chromaRadius, chromaEps * 255 * 255);
+    const chromaStr = chromaNR / 100;
+    for (let i = 0; i < n; i++) {
+      const cbMix = Cb[i] * (1 - chromaStr) + cbNR[i] * chromaStr;
+      const crMix = Cr[i] * (1 - chromaStr) + crNR[i] * chromaStr;
+      const [r, g, b] = yCbCrToRgb(Y[i], cbMix, crMix);
+      result[i*4]   = Math.max(0, Math.min(255, r));
+      result[i*4+1] = Math.max(0, Math.min(255, g));
+      result[i*4+2] = Math.max(0, Math.min(255, b));
+    }
+  }
+
+  if (lumaNR > 0) {
+    const lumaRadius = Math.round(1 + lumaNR * 0.25);
+    const lumaEps = 0.001 + edgeProtect * 0.001;
+    const currentY = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const [y] = rgbToYCbCr(result[i*4], result[i*4+1], result[i*4+2]);
+      currentY[i] = y;
+    }
+    const yNR = guidedFilter(currentY, currentY, w, h, lumaRadius, lumaEps * 255 * 255);
+    const lumaStr = lumaNR / 100;
+    for (let i = 0; i < n; i++) {
+      const pi = i * 4;
+      const [, cbOrig, crOrig] = rgbToYCbCr(result[pi], result[pi+1], result[pi+2]);
+      const yMix = currentY[i] * (1 - lumaStr) + yNR[i] * lumaStr;
+      const [r, g, b] = yCbCrToRgb(yMix, cbOrig, crOrig);
+      result[pi]   = Math.max(0, Math.min(255, r));
+      result[pi+1] = Math.max(0, Math.min(255, g));
+      result[pi+2] = Math.max(0, Math.min(255, b));
+    }
+  }
+  return new ImageData(result, w, h);
+}
+
+/* =====================================================================
+   Histogram drawing
+===================================================================== */
+function drawHistogram(imageData, canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth || 228;
+  const h = canvas.height;
+  canvas.width = w;
+  ctx.clearRect(0, 0, w, h);
+  const bins = 256;
+  const rHist = new Float32Array(bins);
+  const gHist = new Float32Array(bins);
+  const bHist = new Float32Array(bins);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    rHist[data[i]]++; gHist[data[i+1]]++; bHist[data[i+2]]++;
+  }
+  let maxVal = 0;
+  for (let i = 0; i < bins; i++) maxVal = Math.max(maxVal, rHist[i], gHist[i], bHist[i]);
+  const channels = [
+    { hist: rHist, color: 'rgba(200,80,80,0.6)' },
+    { hist: gHist, color: 'rgba(80,160,80,0.6)' },
+    { hist: bHist, color: 'rgba(80,120,200,0.6)' },
+  ];
+  for (const { hist, color } of channels) {
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let i = 0; i < bins; i++) {
+      const x = (i / bins) * w;
+      const y = h - (hist[i] / maxVal) * h * 0.95;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+}
+
+/* =====================================================================
+   Render & Compare UI logic
+===================================================================== */
+function renderBefore(imgData, w, h) {
+  const c = document.getElementById('canvas-before');
+  c.width = w; c.height = h;
+  c.getContext('2d').putImageData(imgData, 0, 0);
+  document.getElementById('status-dim').textContent = w + ' × ' + h;
+}
+function renderAfter(imgData, w, h) {
+  const c = document.getElementById('canvas-after');
+  c.width = w; c.height = h;
+  c.getContext('2d').putImageData(imgData, 0, 0);
+  afterImageData = imgData;
+}
+function updateCompare() {
+  const mode = document.getElementById('view-mode').value;
+  const slider = document.getElementById('compare-slider');
+  const labelB = document.querySelector('.label-before');
+  const labelA = document.querySelector('.label-after');
+  const canvasAfter = document.getElementById('canvas-after');
+  const canvasBefore = document.getElementById('canvas-before');
+  if (mode === 'before') {
+    canvasAfter.style.display = 'none';
+    slider.style.display = 'none';
+    labelB.style.display = 'none';
+    labelA.style.display = 'none';
+    canvasBefore.style.opacity = 1;
+  } else if (mode === 'after') {
+    canvasAfter.style.display = 'block';
+    canvasAfter.style.clipPath = 'none';
+    slider.style.display = 'none';
+    labelB.style.display = 'none';
+    labelA.style.display = 'none';
+    canvasBefore.style.opacity = 0;
+  } else {
+    canvasAfter.style.display = 'block';
+    canvasBefore.style.opacity = 1;
+    slider.style.display = 'block';
+    labelB.style.display = 'block';
+    labelA.style.display = 'block';
+    applySplit(comparePos);
+  }
+}
+function applySplit(pos) {
+  const cw = document.getElementById('canvas-wrapper');
+  const wrapW = cw.offsetWidth;
+  const x = Math.round(wrapW * pos);
+  document.getElementById('compare-slider').style.left = x + 'px';
+  document.getElementById('canvas-after').style.clipPath = 'inset(0 0 0 ' + x + 'px)';
+}
+
+/* =====================================================================
+   DECODE & PROCESS pipeline
+===================================================================== */
+async function decode() {
+  if (!rawBytes || !librawLoaded) return;
+  setStatus('Decoding RAW…', 'processing');
+  setProgress(5, 'Initializing LibRaw…');
+  document.getElementById('btn-process').disabled = true;
+  try {
+    const settings = getDecodeSettings();
+    setProgress(20, 'Unpacking sensor data…');
+    const raw = new LibRaw();
+    setProgress(40, 'Demosaicing…');
+    await raw.open(rawBytes, settings);
+    setProgress(60, 'Color processing…');
+    const imgDataArr = await raw.imageData();
+    const meta = await raw.metadata(false);
+    setProgress(80, 'Rendering…');
+    imgWidth  = meta.width  || meta.outputWidth  || meta.rawWidth  || 0;
+    imgHeight = meta.height || meta.outputHeight || meta.rawHeight || 0;
+    if (!imgWidth || !imgHeight) {
+      const pixCount = imgDataArr.length / 3;
+      imgWidth  = Math.round(Math.sqrt(pixCount * 1.5));
+      imgHeight = Math.round(pixCount / imgWidth);
+    }
+    const rgba = new Uint8ClampedArray(imgWidth * imgHeight * 4);
+    for (let i = 0; i < imgWidth * imgHeight; i++) {
+      rgba[i*4]   = imgDataArr[i*3];
+      rgba[i*4+1] = imgDataArr[i*3+1];
+      rgba[i*4+2] = imgDataArr[i*3+2];
+      rgba[i*4+3] = 255;
+    }
+    beforeImageData = new ImageData(rgba, imgWidth, imgHeight);
+    renderBefore(beforeImageData, imgWidth, imgHeight);
+    updateExif(meta);
+    updateHistogram(beforeImageData);
+    setProgress(90, 'Applying denoise…');
+    await applyDenoise();
+    document.getElementById('canvas-wrapper').style.display = 'inline-block';
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('btn-export').disabled = false;
+    document.getElementById('btn-process').disabled = false;
+    document.getElementById('histogram-section').style.display = 'block';
+    document.getElementById('exif-section').style.display = 'block';
+    updateCompare();
+    setProgress(null);
+    setStatus('Ready — ' + imgWidth + '×' + imgHeight, 'active');
+  } catch (err) {
+    console.error(err);
+    setStatus('Error: ' + err.message, 'idle');
+    setProgress(null);
+    document.getElementById('btn-process').disabled = false;
+  }
+}
+
+async function applyDenoise() {
+  if (!beforeImageData) return;
+  const chromaNR   = parseInt(document.getElementById('chromaNR').value);
+  const lumaNR     = parseInt(document.getElementById('lumaNR').value);
+  const edgeP      = parseInt(document.getElementById('edgeProtect').value);
+  if (chromaNR === 0 && lumaNR === 0) {
+    afterImageData = beforeImageData;
+    renderAfter(afterImageData, imgWidth, imgHeight);
+    updateHistogram(afterImageData);
+    updateCompare();
+    return;
+  }
+  setStatus('Applying post-process NR…', 'processing');
+  setProgress(10, 'Chroma NR…');
+  await new Promise(r => setTimeout(r, 0));
+  try {
+    const result = applyPostDenoise(beforeImageData, chromaNR, lumaNR, edgeP, imgWidth, imgHeight);
+    renderAfter(result, imgWidth, imgHeight);
+    updateHistogram(result);
+    updateCompare();
+    setProgress(null);
+    setStatus('Done', 'active');
+  } catch (err) {
+    console.error(err);
+    setStatus('Post NR error: ' + err.message);
+    setProgress(null);
+  }
+}
+
+function updateHistogram(imgData) {
+  const canvas = document.getElementById('histogram-canvas');
+  drawHistogram(imgData, canvas);
+}
+function getDecodeSettings() {
+  const wbMode = document.getElementById('wb-mode').value;
+  const expShiftRaw = parseFloat(document.getElementById('expShift').value);
+  return {
+    userQual:       parseInt(document.getElementById('userQual').value),
+    outputColor:    parseInt(document.getElementById('outputColor').value),
+    outputBps:      8,
+    highlight:      parseInt(document.getElementById('highlight').value),
+    threshold:      parseInt(document.getElementById('threshold').value),
+    bright:         parseFloat(document.getElementById('bright').value),
+    useCameraWb:    wbMode === 'camera',
+    useAutoWb:      wbMode === 'auto',
+    fourColorRgb:   document.getElementById('fourColorRgb').checked,
+    useFujiRotate:  document.getElementById('useFujiRotate').checked ? -1 : 0,
+    expShift:       Math.pow(2, expShiftRaw),
+    expCorrec:      expShiftRaw !== 0,
+    noAutoBright:   false,
+  };
+}
+function updateExif(meta) {
+  const tbl = document.getElementById('exif-table');
+  const fields = [
+    ['Make', meta.make || meta.manufacturer || meta.normalized_make],
+    ['Model', meta.model || meta.normalized_model],
+    ['Lens', meta.lens],
+    ['ISO', meta.isoSpeed || meta.iso_speed],
+    ['Shutter', (() => { const s = meta.shutter; return s ? (s < 1 ? '1/'+Math.round(1/s)+'s' : s.toFixed(1)+'s') : null; })()],
+    ['Aperture', (() => { const a = meta.aperture; return a ? 'f/'+a.toFixed(1) : null; })()],
+    ['Focal len', (() => { const f = meta.focalLen || meta.focal_len; return f ? f+'mm' : null; })()],
+    ['Size', imgWidth && imgHeight ? imgWidth+'×'+imgHeight : null],
+  ];
+  tbl.innerHTML = fields.filter(([,v]) => v).map(([k,v]) =>
+    `<tr><td>${k}</td><td>${v}</td></tr>`
+  ).join('');
+  document.getElementById('header-meta').textContent =
+    [meta.make, meta.model].filter(Boolean).join(' ') || 'Unknown camera';
+}
+
+/* =====================================================================
+   Helper & UI Wiring
+===================================================================== */
+function scheduleProcess() {
+  if (!document.getElementById('autoProcess').checked) return;
+  if (!rawBytes) return;
+  clearTimeout(processingTimeout);
+  processingTimeout = setTimeout(() => decode(), 400);
+}
+function schedulePostDenoise() {
+  if (!document.getElementById('autoProcess').checked) return;
+  if (!beforeImageData) return;
+  clearTimeout(processingTimeout);
+  processingTimeout = setTimeout(() => applyDenoise(), 300);
+}
+function exportPNG() {
+  const src = afterImageData || beforeImageData;
+  if (!src) return;
+  const c = document.createElement('canvas');
+  c.width = imgWidth; c.height = imgHeight;
+  c.getContext('2d').putImageData(src, 0, 0);
+  const a = document.createElement('a');
+  a.href = c.toDataURL('image/png');
+  a.download = 'denoised.png';
+  a.click();
+}
+function initCompareSlider() {
+  const wrapper = document.getElementById('canvas-wrapper');
+  const slider  = document.getElementById('compare-slider');
+  function onMove(e) {
+    if (!isDragging) return;
+    const rect = wrapper.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    comparePos = Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width));
+    applySplit(comparePos);
+  }
+  slider.addEventListener('mousedown', e => { isDragging = true; e.preventDefault(); });
+  slider.addEventListener('touchstart', e => { isDragging = true; }, { passive: true });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, { passive: true });
+  document.addEventListener('mouseup',  () => { isDragging = false; });
+  document.addEventListener('touchend', () => { isDragging = false; });
+  wrapper.addEventListener('click', e => {
+    if (document.getElementById('view-mode').value !== 'split') return;
+    const rect = wrapper.getBoundingClientRect();
+    comparePos = Math.max(0.02, Math.min(0.98, (e.clientX - rect.left) / rect.width));
+    applySplit(comparePos);
+  });
+}
+async function loadFile(file) {
+  const buf = await file.arrayBuffer();
+  rawBytes = new Uint8Array(buf);
+  setStatus('File loaded: ' + file.name, 'processing');
+  document.getElementById('header-meta').textContent = file.name + ' (' + (buf.byteLength / 1024 / 1024).toFixed(1) + ' MB)';
+  if (librawLoaded) decode(); else setStatus('Waiting for LibRaw to load…', 'processing');
+}
+function wireUI() {
+  const dz = document.getElementById('dropzone');
+  const fi = document.getElementById('file-input');
+  dz.addEventListener('click', () => fi.click());
+  fi.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', e => {
+    e.preventDefault(); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+  document.getElementById('btn-process').addEventListener('click', decode);
+  document.getElementById('btn-export').addEventListener('click', exportPNG);
+  document.getElementById('view-mode').addEventListener('change', updateCompare);
+  ['userQual', 'wb-mode', 'outputColor', 'highlight', 'fourColorRgb', 'useFujiRotate'].forEach(id => {
+    document.getElementById(id).addEventListener('change', scheduleProcess);
+  });
+  ['threshold', 'expShift', 'bright'].forEach(id => {
+    const el = document.getElementById(id);
+    const val = document.getElementById(id + '-val');
+    el.addEventListener('input', () => {
+      const v = parseFloat(el.value);
+      val.textContent = id === 'expShift' ? (v >= 0 ? '+' : '') + v.toFixed(1) : id === 'bright' ? v.toFixed(2) : v;
+      scheduleProcess();
+    });
+  });
+  ['chromaNR', 'lumaNR', 'edgeProtect'].forEach(id => {
+    const el = document.getElementById(id);
+    const val = document.getElementById(id + '-val');
+    el.addEventListener('input', () => { val.textContent = el.value; schedulePostDenoise(); });
+  });
+  initCompareSlider();
+  window.addEventListener('resize', () => {
+    if (document.getElementById('view-mode').value === 'split' && beforeImageData) applySplit(comparePos);
+  });
+}
+async function loadLibRaw() {
+  setStatus('Loading LibRaw.wasm…', 'processing');
+  try {
+    const mod = await import(LIBRAW_CDN);
+    LibRaw = mod.default || mod.LibRaw || Object.values(mod)[0];
+    librawLoaded = true;
+    document.getElementById('btn-process').disabled = !rawBytes;
+    setStatus('LibRaw loaded — drop a RAW file', 'active');
+    if (rawBytes) decode();
+  } catch (err) {
+    console.error('LibRaw load error:', err);
+    setStatus('Could not load LibRaw. Check console.', 'idle');
+    const dz = document.getElementById('dropzone');
+    dz.innerHTML = `<div class="icon" style="color:#c05a5a">✕</div><p style="color:#c05a5a">LibRaw failed to load from CDN</p>`;
+  }
+}
+document.addEventListener('DOMContentLoaded', () => { wireUI(); loadLibRaw(); });
+</script>
+</body>
+</html>
