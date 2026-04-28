@@ -2,6 +2,7 @@ name: Setup and Deploy RAW Denoise
 on:
   push:
     branches: [ main ]
+  workflow_dispatch: # This allows you to run it manually from the Actions tab
 permissions:
   contents: write
 jobs:
@@ -16,34 +17,40 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Fix LibRaw Worker and Patch HTML
+      - name: Patch LibRaw and HTML
         run: |
           python -c "
           import urllib.request, os
+          
+          # 1. Download fresh copies
           CDN = 'https://cdn.jsdelivr.net/npm/libraw-wasm@1.1.2/dist/'
           FILES = ['libraw.js', 'worker.js', 'libraw.wasm', 'index.js']
-          for f in FILES: urllib.request.urlretrieve(CDN + f, f)
+          for f in FILES: 
+              print(f'Downloading {f}...')
+              urllib.request.urlretrieve(CDN + f, f)
           
-          # Fix Bug 1 & 2: Patch worker.js to await results and stop buffer detachment
+          # 2. Apply the 'Detached Buffer' Fix to worker.js
           with open('worker.js', 'r') as f: worker = f.read()
-          # 1. Add async/await to the message handler
+          # We force it to wait for async operations and stop transferring the buffer
           worker = worker.replace('onmessage = (e) => {', 'onmessage = async (e) => {')
           worker = worker.replace('const c = un[fn](...args);', 'const c = await un[fn](...args);')
-          # 2. Remove automatic transfer list to prevent 'detached ArrayBuffer' errors
           worker = worker.replace('const transfer = args.filter(arg => arg instanceof Uint8Array || arg instanceof ArrayBuffer).map(arg => arg instanceof Uint8Array ? arg.buffer : arg);', 'const transfer = [];')
           with open('worker.js', 'w') as f: f.write(worker)
 
-          # Patch index.html to use local files
+          # 3. Patch index.html to use the local files
           with open('index.html', 'r') as f: html = f.read()
-          new_html = html.replace(\"const LIBRAW_CDN = 'https://cdn.jsdelivr.net/npm/libraw-wasm@1.1.2/dist/index.js';\", \"const LIBRAW_CDN = './index.js';\")
-          with open('index.html', 'w') as f: f.write(new_html)
+          # Use a more flexible search for the CDN string
+          old_line = 'const LIBRAW_CDN = \'https://cdn.jsdelivr.net/npm/libraw-wasm@1.1.2/dist/index.js\';'
+          new_line = 'const LIBRAW_CDN = \'./index.js\';'
+          if old_line in html:
+              html = html.replace(old_line, new_line)
+          with open('index.html', 'w') as f: f.write(html)
           "
 
-      - name: Commit and Push
+      - name: Force Commit and Push
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
           git add .
-          git commit -m "Apply black-image and detached-buffer fixes" || echo "No changes"
+          git commit -m "Force patch: fix detached buffer and async worker" || echo "No changes"
           git push
-          
