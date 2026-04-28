@@ -358,7 +358,7 @@
    LibRaw-Wasm loader — tries ybouane's libraw-wasm package from CDN.
    Falls back gracefully if unavailable.
 ===================================================================== */
-const LIBRAW_CDN = 'https://cdn.jsdelivr.net/npm/libraw-wasm@1.1.2/dist/index.js';
+const LIBRAW_CDN = './index.js';
 
 function setStatus(text, state = 'idle') {
   document.getElementById('status-text').textContent = text;
