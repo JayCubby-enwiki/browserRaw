@@ -621,15 +621,24 @@ function applySplit(pos) {
 ===================================================================== */
 async function decode() {
   if (!rawBytes || !librawLoaded) return;
+
   setStatus('Decoding RAW…', 'processing');
   setProgress(5, 'Initializing LibRaw…');
   document.getElementById('btn-process').disabled = true;
+
   try {
     const settings = getDecodeSettings();
     setProgress(20, 'Unpacking sensor data…');
+
+    // FIX: Create a fresh copy of the bytes so the original isn't detached
+    const bytesToProcess = new Uint8Array(rawBytes); 
+
     const raw = new LibRaw();
     setProgress(40, 'Demosaicing…');
-    await raw.open(rawBytes, settings);
+    
+    // Pass the COPY to the worker
+    await raw.open(bytesToProcess, settings);
+
     setProgress(60, 'Color processing…');
     const imgDataArr = await raw.imageData();
     const meta = await raw.metadata(false);
