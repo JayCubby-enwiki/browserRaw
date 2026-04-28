@@ -1,0 +1,38 @@
+name: Setup and Deploy RAW Denoise
+on:
+  push:
+    branches: [ main ]
+permissions:
+  contents: write
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Download WASM and Patch HTML
+        run: |
+          python -c "
+          import urllib.request, os
+          CDN = 'https://cdn.jsdelivr.net/npm/libraw-wasm@1.1.2/dist/'
+          FILES = ['libraw.js', 'worker.js', 'libraw.wasm', 'index.js']
+          for f in FILES: urllib.request.urlretrieve(CDN + f, f)
+          
+          with open('index.html', 'r') as f: html = f.read()
+          new_html = html.replace('https://cdn.jsdelivr.net/npm/libraw-wasm@1.1.2/dist/index.js', './index.js')
+          with open('index.html', 'w') as f: f.write(new_html)
+          "
+
+      - name: Commit and Push dependencies
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          git add .
+          git commit -m "Auto-download WASM dependencies" || echo "No changes to commit"
+          git push
